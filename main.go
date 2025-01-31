@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/krolaw/dhcp4"
@@ -19,6 +20,7 @@ type Interface struct {
 	Name     string
 	intNet   *net.Interface
 	ServerIP net.IP
+	Renew    time.Duration
 }
 
 // Options Struct
@@ -36,15 +38,23 @@ func (d *Interface) readConfig() {
 		os.Exit(1)
 	}
 
-	Interface := cfg.Section("interface").Key("listen").String()
+	Interface := cfg.Section("global").Key("interface").String()
 	d.intNet, err = net.InterfaceByName(Interface)
 	if err != nil {
 		fmt.Printf("Fail to find network interface:%v, %v", Interface, err)
 		os.Exit(1)
 	}
 
-	Server := cfg.Section("interface").Key("server").String()
+	Server := cfg.Section("global").Key("server").String()
 	d.ServerIP = net.ParseIP(Server)
+
+	Renew := cfg.Section("global").Key("renew").String()
+	timeout, err := strconv.Atoi(Renew)
+	if err != nil {
+		fmt.Printf("Fail to parse renew timeout:%v, %v", Renew, err)
+		os.Exit(1)
+	}
+	d.Renew = time.Duration(timeout) * time.Second
 }
 
 func main() {
@@ -60,11 +70,10 @@ func main() {
 
 	// Read options from json file
 	dhcpOptions := options.ReadOptions()
-	spew.Dump(dhcpOptions)
-	// Request IP address
 
+	// Request IP address
 	packet := dhcp4.RequestPacket(dhcp4.Request, d.intNet.HardwareAddr, net.IPv4(0, 0, 0, 0), xid, true, dhcpOptions)
-	spew.Dump(packet)
+
 	Client, err := NewRawClient(d.intNet)
 	if err != nil {
 		fmt.Printf("Error : %s", err)
@@ -76,7 +85,14 @@ func main() {
 		panic(err)
 	}
 
-	err = Client.sendDHCP(broadcastMAC, packet, d.ServerIP, net.IPv4zero)
+	for {
+		err = Client.sendDHCP(broadcastMAC, packet, d.ServerIP, net.IPv4zero)
+		if err != nil {
+			fmt.Printf("Error : %s", err)
+			panic(err)
+		}
+		time.Sleep(d.Renew)
+	}
 }
 
 func (a *Options) ReadOptions() []dhcp4.Option {
