@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/krolaw/dhcp4"
 	"gopkg.in/ini.v1"
 )
@@ -132,11 +131,9 @@ func (a *Options) ReadOptions() []dhcp4.Option {
 		case "bytes":
 			dhcpOption.Code = option.Option
 			for _, value := range strings.Split(option.Value, ",") {
-				spew.Dump(value)
 				val, _ := strconv.Atoi(value)
 				dhcpOption.Value = append(dhcpOption.Value, byte(val))
 			}
-			spew.Dump(dhcpOption.Value)
 		}
 		dhcpOptions = append(dhcpOptions, dhcpOption)
 	}
