@@ -67,9 +67,10 @@ func main() {
 		if err != nil || interval == 0 {
 			return
 		}
-		daemon.SdNotify(false, "WATCHDOG=1")
-		time.Sleep(interval / 3)
-
+		for {
+			daemon.SdNotify(false, "WATCHDOG=1")
+			time.Sleep(interval / 3)
+		}
 	}()
 
 	var d Interface
