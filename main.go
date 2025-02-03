@@ -59,10 +59,9 @@ func (d *Interface) readConfig() {
 
 func main() {
 
-	// Systemd
-	daemon.SdNotify(false, "READY=1")
-
 	go func() {
+		// Systemd
+		daemon.SdNotify(false, "READY=1")
 		interval, err := daemon.SdWatchdogEnabled(false)
 		if err != nil || interval == 0 {
 			return
@@ -99,7 +98,6 @@ func main() {
 		fmt.Printf("Error : %s", err)
 		panic(err)
 	}
-
 	for {
 		err = Client.sendDHCP(broadcastMAC, packet, d.ServerIP, net.IPv4zero)
 		if err != nil {
@@ -108,6 +106,7 @@ func main() {
 		}
 		time.Sleep(d.Renew)
 	}
+
 }
 
 func (a *Options) ReadOptions() []dhcp4.Option {
