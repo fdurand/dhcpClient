@@ -3,7 +3,7 @@ module dhcpclient
 go 1.22.4
 
 require (
-	github.com/davecgh/go-spew v1.1.1
+	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 	github.com/krolaw/dhcp4 v0.0.0-20190909130307-a50d88189771
 	github.com/mdlayher/ethernet v0.0.0-20220221185849-529eae5b6118
 	github.com/mdlayher/raw v0.1.0

@@ -1,0 +1,14 @@
+[Unit]
+Description=GO DHCPv4 Client
+After=syslog.target network.target
+
+[Service]
+StartLimitBurst=3
+StartLimitInterval=60
+Type=notify
+WatchdogSec=30s
+ExecStart=/usr/local/sbin/dhcpclient
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
