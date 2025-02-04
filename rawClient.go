@@ -78,79 +78,6 @@ func (c *RawClient) Close() error {
 	return c.p.Close()
 }
 
-// sendDHCP create a udp packet and stores it in an
-// Ethernet frame, and sends the frame over a raw socket to attempt to wake
-// a machine.
-func (c *RawClient) sendDHCP(target net.HardwareAddr, dhcp []byte, dstIP net.IP, srcIP net.IP) error {
-
-	proto := 17
-
-	udpsrc := uint(67)
-	udpdst := uint(68)
-
-	udp := udphdr{
-		src: uint16(udpsrc),
-		dst: uint16(udpdst),
-	}
-
-	udplen := 8 + len(dhcp)
-
-	ip := iphdr{
-		vhl:   0x45,
-		tos:   0,
-		id:    0x0000, // the kernel overwrites id if it is zero
-		off:   0,
-		ttl:   128,
-		proto: uint8(proto),
-	}
-	copy(ip.src[:], srcIP.To4())
-	copy(ip.dst[:], dstIP.To4())
-
-	udp.ulen = uint16(udplen)
-	udp.checksum(&ip, dhcp)
-
-	totalLen := 20 + udplen
-
-	ip.iplen = uint16(totalLen)
-	ip.checksum()
-
-	buf := bytes.NewBuffer([]byte{})
-	err := binary.Write(buf, binary.BigEndian, &udp)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	udpHeader := buf.Bytes()
-	dataWithHeader := append(udpHeader, dhcp...)
-
-	buff := bytes.NewBuffer([]byte{})
-	err = binary.Write(buff, binary.BigEndian, &ip)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ipHeader := buff.Bytes()
-	packet := append(ipHeader, dataWithHeader...)
-
-	// Create Ethernet frame
-	f := &ethernet.Frame{
-		Destination: target,
-		Source:      c.ifi.HardwareAddr,
-		EtherType:   ethernet.EtherTypeIPv4,
-		Payload:     packet,
-	}
-	fb, err := f.MarshalBinary()
-	if err != nil {
-		return err
-	}
-
-	// Send packet to target
-	_, err = c.p.WriteTo(fb, &raw.Addr{
-		HardwareAddr: target,
-	})
-	return err
-}
-
 func (u *udphdr) checksum(ip *iphdr, payload []byte) {
 	u.csum = 0
 
@@ -277,5 +204,81 @@ func sendUnicastDHCP(dhcp []byte, dstIP net.IP, srcIP net.IP, giAddr net.IP, udp
 		log.Fatal("error closing the socket: ", err)
 		os.Exit(1)
 	}
+	return err
+}
+
+// sendDHCP create a udp packet and stores it in an
+// Ethernet frame, and sends the frame over a raw socket to attempt to wake
+// a machine.
+func (c *RawClient) sendDHCP(dstMac net.HardwareAddr, srcMac net.HardwareAddr, dhcp []byte, dstIP net.IP, srcIP net.IP) error {
+
+	proto := 17
+
+	udpsrc := uint(67)
+	udpdst := uint(68)
+
+	udp := udphdr{
+		src: uint16(udpsrc),
+		dst: uint16(udpdst),
+	}
+
+	udplen := 8 + len(dhcp)
+
+	ip := iphdr{
+		vhl:   0x45,
+		tos:   0,
+		id:    0x0000, // the kernel overwrites id if it is zero
+		off:   0,
+		ttl:   128,
+		proto: uint8(proto),
+	}
+	copy(ip.src[:], srcIP.To4())
+	copy(ip.dst[:], dstIP.To4())
+
+	udp.ulen = uint16(udplen)
+	udp.checksum(&ip, dhcp)
+
+	totalLen := 20 + udplen
+
+	ip.iplen = uint16(totalLen)
+	ip.checksum()
+
+	buf := bytes.NewBuffer([]byte{})
+	err := binary.Write(buf, binary.BigEndian, &udp)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	udpHeader := buf.Bytes()
+	dataWithHeader := append(udpHeader, dhcp...)
+
+	buff := bytes.NewBuffer([]byte{})
+	err = binary.Write(buff, binary.BigEndian, &ip)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ipHeader := buff.Bytes()
+	packet := append(ipHeader, dataWithHeader...)
+
+	if srcMac == nil {
+		srcMac = c.ifi.HardwareAddr
+	}
+	// Create Ethernet frame
+	f := &ethernet.Frame{
+		Destination: dstMac,
+		Source:      srcMac,
+		EtherType:   ethernet.EtherTypeIPv4,
+		Payload:     packet,
+	}
+	fb, err := f.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	// Send packet to target
+	_, err = c.p.WriteTo(fb, &raw.Addr{
+		HardwareAddr: dstMac,
+	})
 	return err
 }

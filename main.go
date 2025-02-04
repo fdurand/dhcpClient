@@ -17,10 +17,16 @@ import (
 )
 
 type Interface struct {
-	Name     string
-	intNet   *net.Interface
-	ServerIP net.IP
-	Renew    time.Duration
+	Name      string
+	intNet    *net.Interface
+	ServerIP  net.IP           // DHCP Server IP (Destination IP)
+	DstMac    net.HardwareAddr // Server Destination MAC (Ethernet Header)
+	Renew     time.Duration    // Renewal time
+	ClientMAC net.HardwareAddr // Device Client MAC (In the DHCP Request)
+	GiAddr    net.IP           // Source Gateway IP
+	SrcMac    net.HardwareAddr // Source MAC (Ethernet Header)
+	CiAddr    net.IP           // Client IP (Requesting IP)
+
 }
 
 // Options Struct
@@ -47,6 +53,41 @@ func (d *Interface) readConfig() {
 
 	Server := cfg.Section("global").Key("server").String()
 	d.ServerIP = net.ParseIP(Server)
+
+	GiAddr := cfg.Section("global").Key("giaddr").String()
+	d.GiAddr = net.ParseIP(GiAddr)
+
+	if d.GiAddr == nil {
+		d.GiAddr = net.IPv4zero
+	}
+
+	CiAddr := cfg.Section("global").Key("ciaddr").String()
+	d.CiAddr = net.ParseIP(CiAddr)
+
+	if d.CiAddr == nil {
+		d.CiAddr = net.IPv4zero
+	}
+
+	ClientMac := cfg.Section("global").Key("clientmac").String()
+	d.ClientMAC, err = net.ParseMAC(ClientMac)
+
+	if err != nil {
+		d.ClientMAC, err = net.ParseMAC("00:00:00:00:00:00")
+	}
+
+	SrcMac := cfg.Section("global").Key("srcmac").String()
+	d.SrcMac, err = net.ParseMAC(SrcMac)
+
+	if err != nil {
+		d.SrcMac = d.intNet.HardwareAddr
+	}
+
+	DstMac := cfg.Section("global").Key("dstmac").String()
+	d.DstMac, err = net.ParseMAC(DstMac)
+
+	if err != nil {
+		d.DstMac, err = net.ParseMAC("FF:FF:FF:FF:FF:FF")
+	}
 
 	Renew := cfg.Section("global").Key("renew").String()
 	timeout, err := strconv.Atoi(Renew)
@@ -86,20 +127,17 @@ func main() {
 	dhcpOptions := options.ReadOptions()
 
 	// Request IP address
-	packet := dhcp4.RequestPacket(dhcp4.Request, d.intNet.HardwareAddr, net.IPv4(0, 0, 0, 0), xid, true, dhcpOptions)
+
+	packet := dhcp4.RequestPacket(dhcp4.Request, d.ClientMAC, d.CiAddr, xid, true, dhcpOptions)
 
 	Client, err := NewRawClient(d.intNet)
 	if err != nil {
 		fmt.Printf("Error : %s", err)
 		panic(err)
 	}
-	broadcastMAC, err := net.ParseMAC("FF:FF:FF:FF:FF:FF")
-	if err != nil {
-		fmt.Printf("Error : %s", err)
-		panic(err)
-	}
+
 	for {
-		err = Client.sendDHCP(broadcastMAC, packet, d.ServerIP, net.IPv4zero)
+		err = Client.sendDHCP(d.DstMac, d.SrcMac, packet, d.ServerIP, d.GiAddr)
 		if err != nil {
 			fmt.Printf("Error : %s", err)
 			panic(err)
