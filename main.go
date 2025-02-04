@@ -126,9 +126,14 @@ func main() {
 	// Read options from json file
 	dhcpOptions := options.ReadOptions()
 
+	broadcast := false
+	if d.DstMac.String() == "FF:FF:FF:FF:FF:FF" {
+		broadcast = true
+	}
+
 	// Request IP address
 
-	packet := RequestPacket(dhcp4.Request, d.ClientMAC, d.GiAddr, d.CiAddr, xid, true, dhcpOptions)
+	packet := RequestPacket(dhcp4.Request, d.ClientMAC, d.GiAddr, d.CiAddr, xid, broadcast, dhcpOptions)
 
 	Client, err := NewRawClient(d.intNet)
 	if err != nil {
