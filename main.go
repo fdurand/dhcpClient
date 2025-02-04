@@ -128,7 +128,7 @@ func main() {
 
 	// Request IP address
 
-	packet := dhcp4.RequestPacket(dhcp4.Request, d.ClientMAC, d.CiAddr, xid, true, dhcpOptions)
+	packet := RequestPacket(dhcp4.Request, d.ClientMAC, d.GiAddr, d.CiAddr, xid, true, dhcpOptions)
 
 	Client, err := NewRawClient(d.intNet)
 	if err != nil {
@@ -145,6 +145,24 @@ func main() {
 		time.Sleep(d.Renew)
 	}
 
+}
+
+// Creates a request packet that a Client would send to a server.
+func RequestPacket(mt dhcp4.MessageType, chAddr net.HardwareAddr, giAddr net.IP, cIAddr net.IP, xId []byte, broadcast bool, options []dhcp4.Option) dhcp4.Packet {
+	p := dhcp4.NewPacket(dhcp4.BootRequest)
+	p.SetCHAddr(chAddr)
+	p.SetXId(xId)
+	if cIAddr != nil {
+		p.SetCIAddr(cIAddr)
+	}
+	p.SetGIAddr(giAddr)
+	p.SetBroadcast(broadcast)
+	p.AddOption(dhcp4.OptionDHCPMessageType, []byte{byte(mt)})
+	for _, o := range options {
+		p.AddOption(o.Code, o.Value)
+	}
+	p.PadToMinSize()
+	return p
 }
 
 func (a *Options) ReadOptions() []dhcp4.Option {
