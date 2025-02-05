@@ -29,6 +29,14 @@ type Interface struct {
 
 }
 
+type Upnp struct {
+	intNet     *net.Interface
+	UserAgent  string
+	IPAddr     net.IP
+	UDPPort    int
+	deviceType string
+}
+
 // Options Struct
 type Options struct {
 	Option dhcp4.OptionCode `json:"option"`
@@ -36,7 +44,7 @@ type Options struct {
 	Type   string           `json:"type"`
 }
 
-func (d *Interface) readConfig() {
+func (d *Interface) readDhcpConfig() {
 
 	cfg, err := ini.Load("/usr/local/etc/godhcpclient.ini")
 	if err != nil {
@@ -98,6 +106,39 @@ func (d *Interface) readConfig() {
 	d.Renew = time.Duration(timeout) * time.Second
 }
 
+func (u *Upnp) readUpnpConfig() {
+
+	cfg, err := ini.Load("/usr/local/etc/goupnp.ini")
+	if err != nil {
+		fmt.Printf("Fail to read file: %v", err)
+		os.Exit(1)
+	}
+
+	Interface := cfg.Section("global").Key("interface").String()
+	u.intNet, err = net.InterfaceByName(Interface)
+	if err != nil {
+		fmt.Printf("Fail to find network interface:%v, %v", Interface, err)
+		os.Exit(1)
+	}
+
+	UserAgent := cfg.Section("global").Key("useragent").String()
+	u.UserAgent = UserAgent
+
+	ipaddr := cfg.Section("global").Key("ipaddr").String()
+	u.IPAddr = net.ParseIP(ipaddr)
+
+	udpport := cfg.Section("global").Key("udpport").String()
+	UdpPort, err := strconv.Atoi(udpport)
+	if err != nil {
+		fmt.Printf("Fail to parse udp port:%v, %v", udpport, err)
+		os.Exit(1)
+	}
+	u.UDPPort = UdpPort
+
+	deviceType := cfg.Section("global").Key("devicetype").String()
+	u.deviceType = deviceType
+}
+
 func main() {
 
 	go func() {
@@ -114,7 +155,18 @@ func main() {
 	}()
 
 	var d Interface
-	d.readConfig()
+	d.readDhcpConfig()
+
+	var u Upnp
+	u.readUpnpConfig()
+
+	go func() {
+		for {
+			u.discover(time.Second * 10)
+
+			time.Sleep(time.Second * 30)
+		}
+	}()
 
 	// Random xid
 	xid := make([]byte, 4)
@@ -214,4 +266,60 @@ func (a *Options) ReadOptions() []dhcp4.Option {
 		dhcpOptions = append(dhcpOptions, dhcpOption)
 	}
 	return dhcpOptions
+}
+
+func (u *Upnp) discover(timeout time.Duration) {
+	ssdp := &net.UDPAddr{IP: u.IPAddr, Port: u.UDPPort}
+
+	tpl := `M-SEARCH * HTTP/1.1
+HOST: %s
+ST: %s
+MAN: "ssdp:discover"
+MX: %d
+USER-AGENT: %s
+
+`
+	searchStr := fmt.Sprintf(tpl, ssdp, u.deviceType, timeout/time.Second, u.UserAgent)
+
+	search := []byte(strings.Replace(searchStr, "\n", "\r\n", -1))
+
+	fmt.Println("Starting discovery of device type", u.deviceType, "on", u.intNet.Name)
+
+	socket, err := net.ListenMulticastUDP("udp4", u.intNet, &net.UDPAddr{IP: ssdp.IP})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer socket.Close() // Make sure our socket gets closed
+
+	err = socket.SetDeadline(time.Now().Add(timeout))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println("Sending search request for device type", u.deviceType, "on", u.intNet.Name)
+
+	_, err = socket.WriteTo(search, ssdp)
+	if err != nil {
+		if e, ok := err.(net.Error); !ok || !e.Timeout() {
+			fmt.Println(err)
+		}
+		return
+	}
+
+	fmt.Println("Listening for UPnP response for device type", u.deviceType, "on", u.intNet.Name)
+
+	// Listen for responses until a timeout is reached
+	for {
+		resp := make([]byte, 65536)
+		_, _, err := socket.ReadFrom(resp)
+		if err != nil {
+			if e, ok := err.(net.Error); !ok || !e.Timeout() {
+				fmt.Println("UPnP read:", err) //legitimate error, not a timeout.
+			}
+			break
+		}
+	}
+	fmt.Println("Discovery for device type", u.deviceType, "on", u.intNet.Name, "finished.")
 }
